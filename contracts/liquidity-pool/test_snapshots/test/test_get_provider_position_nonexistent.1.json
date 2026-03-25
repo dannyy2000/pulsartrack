@@ -207,6 +207,17 @@
                             },
                             {
                               "key": {
+                                "symbol": "interest_reserve"
+                              },
+                              "val": {
+                                "i128": {
+                                  "hi": 0,
+                                  "lo": 0
+                                }
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "last_updated"
                               },
                               "val": {

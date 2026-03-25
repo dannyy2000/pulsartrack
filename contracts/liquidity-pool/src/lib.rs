@@ -13,6 +13,7 @@ pub struct PoolState {
     pub utilization_rate: u32, // percentage borrowed
     pub borrow_rate_bps: u32,  // annual rate in basis points
     pub last_updated: u64,
+    pub interest_reserve: i128, // Accumulated interest payments
 }
 
 #[contracttype]
@@ -79,6 +80,7 @@ impl LiquidityPoolContract {
                 utilization_rate: 0,
                 borrow_rate_bps: 500, // 5% annual
                 last_updated: env.ledger().timestamp(),
+                interest_reserve: 0,
             },
         );
     }
@@ -288,17 +290,31 @@ impl LiquidityPoolContract {
         token_client.transfer(&borrower, &env.current_contract_address(), &amount);
 
         let mut pool: PoolState = env.storage().instance().get(&DataKey::PoolState).unwrap();
-        pool.total_borrowed -= amount.min(borrow.borrowed);
+        
+        // Separate principal repayment from interest
+        let principal_repaid = amount.min(borrow.borrowed);
+        let interest_paid = amount.saturating_sub(principal_repaid);
+        
+        // Reduce total_borrowed by principal repaid
+        pool.total_borrowed -= principal_repaid;
+        
+        // Interest goes to separate reserve (not added to total_liquidity)
+        pool.interest_reserve += interest_paid;
+        
         if pool.total_liquidity > 0 {
             pool.utilization_rate = ((pool.total_borrowed * 100) / pool.total_liquidity) as u32;
         }
-        pool.total_liquidity += amount;
         pool.last_updated = env.ledger().timestamp();
         env.storage().instance().set(&DataKey::PoolState, &pool);
 
         env.storage()
             .persistent()
             .remove(&DataKey::Borrow(campaign_id));
+        
+        env.events().publish(
+            (symbol_short!("pool"), symbol_short!("repay")),
+            (borrower, campaign_id, principal_repaid, interest_paid),
+        );
     }
 
     pub fn get_pool_state(env: Env) -> PoolState {
