@@ -141,6 +141,7 @@ fn test_suspend_publisher() {
     let (c, admin) = setup(&env);
     let pub1 = Address::generate(&env);
     c.register_publisher(&pub1, &s(&env, "example.com"));
+    c.submit_kyc(&pub1, &s(&env, "KycHash"), &s(&env, "KycProvider"));
     c.verify_publisher(&admin, &pub1, &PublisherTier::Silver);
     c.suspend_publisher(&admin, &pub1);
     assert!(!c.is_verified(&pub1));
@@ -177,6 +178,7 @@ fn test_record_impression() {
     let pub1 = Address::generate(&env);
     let caller = Address::generate(&env);
     c.register_publisher(&pub1, &s(&env, "example.com"));
+    c.submit_kyc(&pub1, &s(&env, "KycHash"), &s(&env, "KycProvider"));
     c.verify_publisher(&admin, &pub1, &PublisherTier::Gold);
     c.record_impression(&caller, &pub1, &1000i128);
     let p = c.get_publisher(&pub1).unwrap();
