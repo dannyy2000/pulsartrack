@@ -119,3 +119,13 @@ fn test_consent_hash_unique_per_flags() {
     let hash_all_off = c.get_consent(&user).unwrap().consent_hash;
     assert_ne!(hash_all_on, hash_all_off);
 }
+
+#[test]
+fn test_has_consent_third_party_sharing() {
+    let env = Env::default(); env.mock_all_auths();
+    let (c, _) = setup(&env);
+    let user = Address::generate(&env);
+    c.set_consent(&user, &false, &false, &false, &true, &None);
+    assert!(c.has_consent(&user, &s(&env, "third_party_sharing")));
+    assert!(!c.has_consent(&user, &s(&env, "analytics")));
+}

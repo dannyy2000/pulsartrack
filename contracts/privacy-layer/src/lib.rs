@@ -191,13 +191,14 @@ impl PrivacyLayerContract {
                 }
             }
 
-            // Check specific consent type
             if consent_type == String::from_str(&env, "targeted_ads") {
                 consent.targeted_ads
             } else if consent_type == String::from_str(&env, "analytics") {
                 consent.analytics
             } else if consent_type == String::from_str(&env, "data_processing") {
                 consent.data_processing
+            } else if consent_type == String::from_str(&env, "third_party_sharing") {
+                consent.third_party_sharing
             } else {
                 false
             }
