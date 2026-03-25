@@ -217,21 +217,26 @@ impl PaymentProcessorContract {
 
         // Execute token transfers
         let token_client = token::Client::new(&env, &token);
+        let contract_address = env.current_contract_address();
 
         if token_client.balance(&payer) < amount {
             panic!("insufficient balance");
         }
 
-        token_client.transfer(&payer, &recipient, &net_amount);
+        // Transfer the full amount to the contract first so that both outgoing
+        // distributions share a single payer authorization.  If either
+        // distribution fails the entire transaction rolls back, including this
+        // inbound transfer — making the two-leg payout atomic.
+        token_client.transfer(&payer, &contract_address, &amount);
+        token_client.transfer(&contract_address, &recipient, &net_amount);
 
-        // Transfer fee to treasury
         if fee > 0 {
             let treasury: Address = env
                 .storage()
                 .instance()
                 .get(&DataKey::TreasuryAddress)
                 .unwrap();
-            token_client.transfer(&payer, &treasury, &fee);
+            token_client.transfer(&contract_address, &treasury, &fee);
         }
 
         // Record payment
