@@ -5,13 +5,13 @@ use soroban_sdk::{
     Address, Env,
 };
 
-fn setup(env: &Env) -> (BudgetOptimizerContractClient<'_>, Address) {
+fn setup(env: &Env) -> (BudgetOptimizerContractClient<'_>, Address, Address) {
     let admin = Address::generate(env);
     let oracle = Address::generate(env);
     let id = env.register_contract(None, BudgetOptimizerContract);
     let c = BudgetOptimizerContractClient::new(env, &id);
     c.initialize(&admin, &oracle);
-    (c, admin)
+    (c, admin, oracle)
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn test_initialize_non_admin_fails() {
 fn test_set_budget_allocation() {
     let env = Env::default();
     env.mock_all_auths();
-    let (c, _) = setup(&env);
+    let (c, _, _) = setup(&env);
     let advertiser = Address::generate(&env);
     c.set_budget_allocation(
         &advertiser,
@@ -67,7 +67,7 @@ fn test_set_budget_allocation() {
 fn test_record_spend() {
     let env = Env::default();
     env.mock_all_auths();
-    let (c, admin) = setup(&env);
+    let (c, admin, _) = setup(&env);
     let advertiser = Address::generate(&env);
     c.set_budget_allocation(
         &advertiser,
@@ -87,7 +87,7 @@ fn test_record_spend() {
 fn test_record_spend_resets_on_new_day() {
     let env = Env::default();
     env.mock_all_auths();
-    let (c, admin) = setup(&env);
+    let (c, admin, _) = setup(&env);
     let advertiser = Address::generate(&env);
     c.set_budget_allocation(
         &advertiser,
@@ -116,7 +116,7 @@ fn test_record_spend_resets_on_new_day() {
 fn test_can_spend() {
     let env = Env::default();
     env.mock_all_auths();
-    let (c, _) = setup(&env);
+    let (c, _, _) = setup(&env);
     let advertiser = Address::generate(&env);
     c.set_budget_allocation(
         &advertiser,
@@ -135,7 +135,7 @@ fn test_can_spend() {
 fn test_can_spend_resets_on_new_day_without_write() {
     let env = Env::default();
     env.mock_all_auths();
-    let (c, admin) = setup(&env);
+    let (c, admin, _) = setup(&env);
     let advertiser = Address::generate(&env);
     c.set_budget_allocation(
         &advertiser,
@@ -161,7 +161,7 @@ fn test_can_spend_resets_on_new_day_without_write() {
 fn test_get_allocation_nonexistent() {
     let env = Env::default();
     env.mock_all_auths();
-    let (c, _) = setup(&env);
+    let (c, _, _) = setup(&env);
     assert!(c.get_allocation(&999u64).is_none());
 }
 
@@ -169,6 +169,44 @@ fn test_get_allocation_nonexistent() {
 fn test_can_spend_nonexistent() {
     let env = Env::default();
     env.mock_all_auths();
-    let (c, _) = setup(&env);
+    let (c, _, _) = setup(&env);
     assert!(!c.can_spend(&999u64, &100i128));
+}
+#[test]
+fn test_optimization_does_not_break_reset() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, admin, oracle) = setup(&env);
+    let advertiser = Address::generate(&env);
+    c.set_budget_allocation(
+        &advertiser,
+        &1u64,
+        &100_000i128,
+        &10_000i128,
+        &OptimizationMode::ManualCpc,
+        &500i128,
+        &100u32,
+    );
+
+    // Spend full budget on Day 0
+    c.record_spend(&admin, &1u64, &10_000i128);
+    assert!(!c.can_spend(&1u64, &1i128));
+
+    // Advance to Day 1
+    env.ledger().with_mut(|li| {
+        li.timestamp = 86_400;
+    });
+
+    // Optimize budget on Day 1
+    c.optimize_budget(&oracle, &1u64, &12_000i128, &soroban_sdk::String::from_str(&env, "better performance"));
+
+    // Check if we can spend (should be reset to 0, so 12,000 available)
+    assert!(c.can_spend(&1u64, &12_000i128));
+    
+    // Record spend on Day 1
+    c.record_spend(&admin, &1u64, &5_000i128);
+    let alloc = c.get_allocation(&1u64).unwrap();
+    assert_eq!(alloc.spent_today, 5_000);
+    assert_eq!(alloc.spent_total, 15_000);
+    assert_eq!(alloc.last_reset_day, 1);
 }

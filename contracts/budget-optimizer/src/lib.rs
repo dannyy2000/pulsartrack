@@ -17,6 +17,7 @@ pub struct BudgetAllocation {
     pub target_cpa: i128, // Target cost per acquisition
     pub target_ctr: u32,  // Target CTR * 10000
     pub last_optimized: u64,
+    pub last_reset_day: u64,
 }
 
 #[contracttype]
@@ -106,6 +107,7 @@ impl BudgetOptimizerContract {
             target_cpa,
             target_ctr,
             last_optimized: env.ledger().timestamp(),
+            last_reset_day: env.ledger().timestamp() / 86_400,
         };
 
         let _ttl_key = DataKey::Allocation(campaign_id);
@@ -210,9 +212,9 @@ impl BudgetOptimizerContract {
             .expect("allocation not found");
 
         let current_day = env.ledger().timestamp() / 86_400;
-        let last_day = allocation.last_optimized / 86_400;
-        if current_day > last_day {
+        if current_day > allocation.last_reset_day {
             allocation.spent_today = 0;
+            allocation.last_reset_day = current_day;
         }
 
         allocation.spent_today += amount;
@@ -247,8 +249,7 @@ impl BudgetOptimizerContract {
             .get::<DataKey, BudgetAllocation>(&DataKey::Allocation(campaign_id))
         {
             let current_day = env.ledger().timestamp() / 86_400;
-            let last_day = alloc.last_optimized / 86_400;
-            let effective_spent_today = if current_day > last_day {
+            let effective_spent_today = if current_day > alloc.last_reset_day {
                 0
             } else {
                 alloc.spent_today

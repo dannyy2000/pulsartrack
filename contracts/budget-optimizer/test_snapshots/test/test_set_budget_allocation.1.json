@@ -199,6 +199,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "last_reset_day"
+                      },
+                      "val": {
+                        "u64": 0
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "optimization_mode"
                       },
                       "val": {
