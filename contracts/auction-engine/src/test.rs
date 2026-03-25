@@ -107,9 +107,10 @@ fn test_create_auction() {
 fn test_place_bid() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _, _, _) = setup(&env);
+    let (client, _, _, token_addr) = setup(&env);
     let publisher = Address::generate(&env);
     let bidder = Address::generate(&env);
+    mint(&env, &token_addr, &bidder, 10_000);
 
     let auction_id =
         client.create_auction(&publisher, &slot(&env), &1_000i128, &5_000i128, &3600u64);
@@ -129,7 +130,7 @@ fn test_place_bid() {
 fn test_multiple_bids_highest_wins() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _, _, _) = setup(&env);
+    let (client, _, _, token_addr) = setup(&env);
     let publisher = Address::generate(&env);
     let bidder1 = Address::generate(&env);
     let bidder2 = Address::generate(&env);
@@ -137,23 +138,32 @@ fn test_multiple_bids_highest_wins() {
     let auction_id =
         client.create_auction(&publisher, &slot(&env), &1_000i128, &5_000i128, &3600u64);
 
+    mint(&env, &token_addr, &bidder1, 10_000);
+    mint(&env, &token_addr, &bidder2, 10_000);
+
     client.place_bid(&bidder1, &auction_id, &2_000i128, &1u64);
     client.place_bid(&bidder2, &auction_id, &4_000i128, &2u64);
 
     let auction = client.get_auction(&auction_id).unwrap();
-    assert_eq!(auction.winner, Some(bidder2));
+    assert_eq!(auction.winner, Some(bidder2.clone()));
     assert_eq!(auction.winning_bid, Some(4_000));
     assert_eq!(auction.bid_count, 2);
     assert_eq!(client.get_highest_bid(&auction_id), Some(4_000));
+
+    let tc = TokenClient::new(&env, &token_addr);
+    assert_eq!(tc.balance(&bidder1), 10_000); // Refunded
+    assert_eq!(tc.balance(&bidder2), 6_000);  // Escrowed
+    assert_eq!(tc.balance(&client.address), 4_000);
 }
 
 #[test]
 fn test_bid_stored_by_index() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _, _, _) = setup(&env);
+    let (client, _, _, token_addr) = setup(&env);
     let publisher = Address::generate(&env);
     let bidder = Address::generate(&env);
+    mint(&env, &token_addr, &bidder, 10_000);
 
     let auction_id = client.create_auction(&publisher, &slot(&env), &500i128, &2_000i128, &3600u64);
 
@@ -172,9 +182,10 @@ fn test_bid_stored_by_index() {
 fn test_bid_below_floor_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _, _, _) = setup(&env);
+    let (client, _, _, token_addr) = setup(&env);
     let publisher = Address::generate(&env);
     let bidder = Address::generate(&env);
+    mint(&env, &token_addr, &bidder, 10_000);
 
     let auction_id =
         client.create_auction(&publisher, &slot(&env), &1_000i128, &5_000i128, &3600u64);
@@ -187,10 +198,12 @@ fn test_bid_below_floor_rejected() {
 fn test_bid_not_higher_than_current_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _, _, _) = setup(&env);
+    let (client, _, _, token_addr) = setup(&env);
     let publisher = Address::generate(&env);
     let bidder1 = Address::generate(&env);
     let bidder2 = Address::generate(&env);
+    mint(&env, &token_addr, &bidder1, 10_000);
+    mint(&env, &token_addr, &bidder2, 10_000);
 
     let auction_id =
         client.create_auction(&publisher, &slot(&env), &1_000i128, &5_000i128, &3600u64);
@@ -204,9 +217,10 @@ fn test_bid_not_higher_than_current_rejected() {
 fn test_bid_after_auction_ended() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _, _, _) = setup(&env);
+    let (client, _, _, token_addr) = setup(&env);
     let publisher = Address::generate(&env);
     let bidder = Address::generate(&env);
+    mint(&env, &token_addr, &bidder, 10_000);
 
     let auction_id = client.create_auction(
         &publisher,
@@ -249,6 +263,10 @@ fn test_settle_auction_with_winner() {
 
     client.place_bid(&bidder, &auction_id, &3_000i128, &1u64); // above reserve
 
+    let tc = TokenClient::new(&env, &token_addr);
+    assert_eq!(tc.balance(&bidder), 97_000);
+    assert_eq!(tc.balance(&client.address), 3_000);
+
     // advance past end_time
     env.ledger().with_mut(|li| {
         li.timestamp = 200;
@@ -259,9 +277,9 @@ fn test_settle_auction_with_winner() {
     let auction = client.get_auction(&auction_id).unwrap();
     assert!(matches!(auction.status, AuctionStatus::Settled));
 
-    let tc = TokenClient::new(&env, &token_addr);
     assert_eq!(tc.balance(&publisher), 3_000);
     assert_eq!(tc.balance(&bidder), 97_000);
+    assert_eq!(tc.balance(&client.address), 0);
 }
 
 #[test]
@@ -291,6 +309,10 @@ fn test_settle_auction_below_reserve_cancelled() {
 
     client.place_bid(&bidder, &auction_id, &1_500i128, &1u64); // above floor, below reserve
 
+    let tc = TokenClient::new(&env, &token_addr);
+    assert_eq!(tc.balance(&bidder), 98_500);
+    assert_eq!(tc.balance(&client.address), 1_500);
+
     env.ledger().with_mut(|li| {
         li.timestamp = 200;
     });
@@ -300,10 +322,10 @@ fn test_settle_auction_below_reserve_cancelled() {
     let auction = client.get_auction(&auction_id).unwrap();
     assert!(matches!(auction.status, AuctionStatus::Cancelled));
 
-    // no transfer should have happened
-    let tc = TokenClient::new(&env, &token_addr);
+    // bidder should be refunded
     assert_eq!(tc.balance(&bidder), 100_000);
     assert_eq!(tc.balance(&publisher), 0);
+    assert_eq!(tc.balance(&client.address), 0);
 }
 
 #[test]
@@ -331,9 +353,10 @@ fn test_settle_auction_no_bids_cancelled() {
 fn test_settle_auction_still_running() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _, _, _) = setup(&env);
+    let (client, _, _, token_addr) = setup(&env);
     let publisher = Address::generate(&env);
     let bidder = Address::generate(&env);
+    mint(&env, &token_addr, &bidder, 10_000);
 
     let auction_id =
         client.create_auction(&publisher, &slot(&env), &1_000i128, &5_000i128, &3600u64);
@@ -404,4 +427,26 @@ fn test_get_auction_nonexistent_returns_none() {
     assert!(client.get_auction(&999u64).is_none());
     assert_eq!(client.get_bid_count(&999u64), 0);
     assert!(client.get_highest_bid(&999u64).is_none());
+}
+
+#[test]
+fn test_bidder_refunds_self_on_higher_bid() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _, _, token_addr) = setup(&env);
+    let publisher = Address::generate(&env);
+    let bidder = Address::generate(&env);
+    mint(&env, &token_addr, &bidder, 10_000);
+
+    let auction_id = client.create_auction(&publisher, &slot(&env), &1_000i128, &5_000i128, &3600u64);
+
+    client.place_bid(&bidder, &auction_id, &2_000i128, &1u64);
+    let tc = TokenClient::new(&env, &token_addr);
+    assert_eq!(tc.balance(&bidder), 8_000);
+    assert_eq!(tc.balance(&client.address), 2_000);
+
+    // same bidder bids higher
+    client.place_bid(&bidder, &auction_id, &3_000i128, &1u64);
+    assert_eq!(tc.balance(&bidder), 7_000); // 8000 + 2000 (refund) - 3000 (new bid) = 7000
+    assert_eq!(tc.balance(&client.address), 3_000);
 }

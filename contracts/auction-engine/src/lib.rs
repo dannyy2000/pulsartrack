@@ -174,6 +174,27 @@ impl AuctionEngineContract {
             }
         }
 
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::TokenAddress)
+            .unwrap();
+        let token_client = token::Client::new(&env, &token_addr);
+
+        // Refund the previous highest bidder if they exist
+        if let Some(prev_winner) = &auction.winner {
+            if let Some(prev_amount) = auction.winning_bid {
+                token_client.transfer(
+                    &env.current_contract_address(),
+                    prev_winner,
+                    &prev_amount,
+                );
+            }
+        }
+
+        // Transfer the new bid into the contract
+        token_client.transfer(&bidder, &env.current_contract_address(), &amount);
+
         let bid = Bid {
             bidder: bidder.clone(),
             amount,
@@ -252,21 +273,23 @@ impl AuctionEngineContract {
             panic!("auction still running");
         }
 
-        auction.status = if auction.winning_bid.is_some() {
-            let winning = auction.winning_bid.unwrap();
+        auction.status = if let Some(winning) = auction.winning_bid {
+            let token_addr: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::TokenAddress)
+                .unwrap();
+            let token_client = token::Client::new(&env, &token_addr);
+
             if winning >= auction.reserve_price {
-                // Transfer payment from winner to publisher
-                let token_addr: Address = env
-                    .storage()
-                    .instance()
-                    .get(&DataKey::TokenAddress)
-                    .unwrap();
-                let token_client = token::Client::new(&env, &token_addr);
-                if let Some(winner) = auction.winner.clone() {
-                    token_client.transfer(&winner, &auction.publisher, &winning);
-                }
+                // Transfer payment from contract to publisher
+                token_client.transfer(&env.current_contract_address(), &auction.publisher, &winning);
                 AuctionStatus::Settled
             } else {
+                // Refund the highest bidder because reserve not met
+                if let Some(winner) = &auction.winner {
+                    token_client.transfer(&env.current_contract_address(), winner, &winning);
+                }
                 AuctionStatus::Cancelled
             }
         } else {
