@@ -523,6 +523,89 @@ fn test_extend_campaign_up_to_max_duration() {
     assert_eq!(lc.current_end_ledger, 30_000);
 }
 
+// ─── archiving terminal states ────────────────────────────────────────────────
+
+#[test]
+fn test_transition_completed_to_archived() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = setup(&env);
+    let advertiser = Address::generate(&env);
+
+    client.register_campaign(&advertiser, &1u64, &10_000u32);
+    client.transition(&advertiser, &1u64, &LifecycleState::PendingReview, &make_reason(&env));
+    client.transition(&admin, &1u64, &LifecycleState::Active, &make_reason(&env));
+    client.transition(&advertiser, &1u64, &LifecycleState::Completed, &String::from_str(&env, "done"));
+    client.transition(&admin, &1u64, &LifecycleState::Archived, &String::from_str(&env, "archiving"));
+
+    let lc = client.get_lifecycle(&1u64).unwrap();
+    assert!(matches!(lc.state, LifecycleState::Archived));
+}
+
+#[test]
+fn test_transition_expired_to_archived() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = setup(&env);
+    let advertiser = Address::generate(&env);
+
+    client.register_campaign(&advertiser, &1u64, &10_000u32);
+    client.transition(&advertiser, &1u64, &LifecycleState::PendingReview, &make_reason(&env));
+    client.transition(&admin, &1u64, &LifecycleState::Active, &make_reason(&env));
+    client.transition(&admin, &1u64, &LifecycleState::Expired, &String::from_str(&env, "timed out"));
+    client.transition(&admin, &1u64, &LifecycleState::Archived, &String::from_str(&env, "archiving"));
+
+    let lc = client.get_lifecycle(&1u64).unwrap();
+    assert!(matches!(lc.state, LifecycleState::Archived));
+}
+
+#[test]
+fn test_transition_rejected_to_archived() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = setup(&env);
+    let advertiser = Address::generate(&env);
+
+    client.register_campaign(&advertiser, &1u64, &10_000u32);
+    client.transition(&advertiser, &1u64, &LifecycleState::PendingReview, &make_reason(&env));
+    client.transition(&admin, &1u64, &LifecycleState::Rejected, &String::from_str(&env, "policy violation"));
+    client.transition(&admin, &1u64, &LifecycleState::Archived, &String::from_str(&env, "archiving"));
+
+    let lc = client.get_lifecycle(&1u64).unwrap();
+    assert!(matches!(lc.state, LifecycleState::Archived));
+}
+
+#[test]
+#[should_panic(expected = "invalid state transition")]
+fn test_archived_is_terminal() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin) = setup(&env);
+    let advertiser = Address::generate(&env);
+
+    client.register_campaign(&advertiser, &1u64, &10_000u32);
+    client.transition(&advertiser, &1u64, &LifecycleState::PendingReview, &make_reason(&env));
+    client.transition(&admin, &1u64, &LifecycleState::Active, &make_reason(&env));
+    client.transition(&advertiser, &1u64, &LifecycleState::Completed, &String::from_str(&env, "done"));
+    client.transition(&admin, &1u64, &LifecycleState::Archived, &String::from_str(&env, "archiving"));
+    // Archived → Active must be blocked
+    client.transition(&admin, &1u64, &LifecycleState::Active, &make_reason(&env));
+}
+
+#[test]
+#[should_panic(expected = "invalid state transition")]
+fn test_cancelled_is_terminal() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _) = setup(&env);
+    let advertiser = Address::generate(&env);
+
+    client.register_campaign(&advertiser, &1u64, &10_000u32);
+    client.transition(&advertiser, &1u64, &LifecycleState::Cancelled, &String::from_str(&env, "changed mind"));
+    // Cancelled → PendingReview must be blocked
+    client.transition(&advertiser, &1u64, &LifecycleState::PendingReview, &make_reason(&env));
+}
+
 // ─── set_fraud_contract ──────────────────────────────────────────────────────
 
 #[test]

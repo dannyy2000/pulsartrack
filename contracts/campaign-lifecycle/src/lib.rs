@@ -376,7 +376,11 @@ impl CampaignLifecycleContract {
             LifecycleState::Paused => {
                 matches!(to, LifecycleState::Active | LifecycleState::Cancelled)
             }
-            _ => false,
+            LifecycleState::Completed => matches!(to, LifecycleState::Archived),
+            LifecycleState::Expired => matches!(to, LifecycleState::Archived),
+            LifecycleState::Rejected => matches!(to, LifecycleState::Archived),
+            LifecycleState::Archived => false,
+            LifecycleState::Cancelled => false,
         };
         if !valid {
             panic!("invalid state transition");
