@@ -10,6 +10,13 @@ use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, E
 
 #[contracttype]
 #[derive(Clone)]
+pub struct Allowance {
+    pub amount: i128,
+    pub expiry: u32, // ledger sequence number after which the allowance is invalid
+}
+
+#[contracttype]
+#[derive(Clone)]
 pub struct Delegation {
     pub delegate: Address,
     pub delegated_at: u64,
@@ -186,13 +193,17 @@ impl GovernanceTokenContract {
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         spender.require_auth();
 
-        let allowance: i128 = env
+        let allowance: Allowance = env
             .storage()
             .persistent()
             .get(&DataKey::Allowance(from.clone(), spender.clone()))
-            .unwrap_or(0);
+            .unwrap_or(Allowance { amount: 0, expiry: 0 });
 
-        if allowance < amount {
+        if env.ledger().sequence() > allowance.expiry {
+            panic!("allowance expired");
+        }
+
+        if allowance.amount < amount {
             panic!("insufficient allowance");
         }
 
@@ -207,9 +218,13 @@ impl GovernanceTokenContract {
         }
 
         let _ttl_key = DataKey::Allowance(from.clone(), spender);
-        env.storage()
-            .persistent()
-            .set(&_ttl_key, &(allowance - amount));
+        env.storage().persistent().set(
+            &_ttl_key,
+            &Allowance {
+                amount: allowance.amount - amount,
+                expiry: allowance.expiry,
+            },
+        );
         env.storage().persistent().extend_ttl(
             &_ttl_key,
             PERSISTENT_LIFETIME_THRESHOLD,
@@ -242,13 +257,15 @@ impl GovernanceTokenContract {
     }
 
     /// Approve token spending
-    pub fn approve(env: Env, owner: Address, spender: Address, amount: i128, _expiry: u32) {
+    pub fn approve(env: Env, owner: Address, spender: Address, amount: i128, expiry: u32) {
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         owner.require_auth();
         let _ttl_key = DataKey::Allowance(owner, spender);
-        env.storage().persistent().set(&_ttl_key, &amount);
+        env.storage()
+            .persistent()
+            .set(&_ttl_key, &Allowance { amount, expiry });
         env.storage().persistent().extend_ttl(
             &_ttl_key,
             PERSISTENT_LIFETIME_THRESHOLD,
@@ -263,7 +280,8 @@ impl GovernanceTokenContract {
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         env.storage()
             .persistent()
-            .get(&DataKey::Allowance(owner, spender))
+            .get::<DataKey, Allowance>(&DataKey::Allowance(owner, spender))
+            .map(|a| a.amount)
             .unwrap_or(0)
     }
 

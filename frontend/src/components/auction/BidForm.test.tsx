@@ -29,7 +29,7 @@ describe('BidForm', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(usePlaceBid).mockReturnValue({
-            mutateAsync: mockMutateAsync,
+            placeBid: mockMutateAsync,
             isPending: false,
         } as any);
     });
@@ -48,7 +48,7 @@ describe('BidForm', () => {
 
         fireEvent.change(bidInput, { target: { value: '0.5' } });
         fireEvent.change(campaignInput, { target: { value: '10' } });
-        fireEvent.click(submitButton);
+        fireEvent.submit(bidInput.closest('form')!);
 
         expect(await screen.findByText(/Minimum bid is 1.0000 XLM/i)).toBeInTheDocument();
         expect(mockMutateAsync).not.toHaveBeenCalled();
@@ -70,7 +70,7 @@ describe('BidForm', () => {
 
         await waitFor(() => {
             expect(mockMutateAsync).toHaveBeenCalledWith({
-                auctionId: 1n,
+                auctionId: 1,
                 campaignId: 123,
                 amountStroops: 25000000n, // Matches BidForm call to placeBid
             });

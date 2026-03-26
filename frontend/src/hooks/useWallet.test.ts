@@ -1,16 +1,39 @@
 import { renderHook, act } from '@testing-library/react';
 import { useWallet } from './useWallet';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { connectWallet, isWalletConnected, getWalletAddress } from '@/lib/wallet';
+import {
+    connectWallet,
+    isWalletConnected,
+    getWalletAddress,
+    verifyNetwork,
+    getFreighterNetworkLabel,
+    getWalletData,
+} from '@/lib/wallet';
 import { useWalletStore } from '@/store/wallet-store';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import React from 'react';
 
 // Mock the wallet lib
 vi.mock('@/lib/wallet', () => ({
     connectWallet: vi.fn(),
     isWalletConnected: vi.fn(),
     getWalletAddress: vi.fn(),
+    verifyNetwork: vi.fn(),
+    getFreighterNetworkLabel: vi.fn(),
+    getWalletData: vi.fn(),
+}));
+
+vi.mock('@/lib/error-handler', () => ({
     parseStellarError: vi.fn((err: any) => err.message),
 }));
+
+const createWrapper = () => {
+    const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+    });
+    return ({ children }: { children: React.ReactNode }) =>
+        React.createElement(QueryClientProvider, { client: queryClient }, children);
+};
 
 describe('useWallet', () => {
     beforeEach(() => {
@@ -20,13 +43,18 @@ describe('useWallet', () => {
             store.disconnect();
         });
         vi.clearAllMocks();
+        // Apply default mock implementations
+        vi.mocked(isWalletConnected).mockResolvedValue(false);
+        vi.mocked(verifyNetwork).mockResolvedValue(true);
+        vi.mocked(getFreighterNetworkLabel).mockResolvedValue('TESTNET');
+        vi.mocked(getWalletData).mockResolvedValue({ network: 'testnet', address: '', isConnected: false });
     });
 
     it('should connect successfully', async () => {
         const mockAddress = 'GABC...123';
         vi.mocked(connectWallet).mockResolvedValue(mockAddress);
 
-        const { result } = renderHook(() => useWallet());
+        const { result } = renderHook(() => useWallet(), { wrapper: createWrapper() });
 
         await act(async () => {
             const resp = await result.current.connect();
@@ -41,7 +69,7 @@ describe('useWallet', () => {
     it('should handle connection error', async () => {
         vi.mocked(connectWallet).mockRejectedValue(new Error('User rejected'));
 
-        const { result } = renderHook(() => useWallet());
+        const { result } = renderHook(() => useWallet(), { wrapper: createWrapper() });
 
         await act(async () => {
             const resp = await result.current.connect();
@@ -59,7 +87,7 @@ describe('useWallet', () => {
             useWalletStore.getState().setConnected(true);
         });
 
-        const { result } = renderHook(() => useWallet());
+        const { result } = renderHook(() => useWallet(), { wrapper: createWrapper() });
         expect(result.current.isConnected).toBe(true);
 
         act(() => {
@@ -75,7 +103,7 @@ describe('useWallet', () => {
         vi.mocked(isWalletConnected).mockResolvedValue(true);
         vi.mocked(getWalletAddress).mockResolvedValue(mockAddress);
 
-        const { result } = renderHook(() => useWallet());
+        const { result } = renderHook(() => useWallet(), { wrapper: createWrapper() });
 
         await act(async () => {
             await result.current.checkConnection();

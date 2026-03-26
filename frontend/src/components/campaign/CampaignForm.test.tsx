@@ -15,7 +15,7 @@ describe('CampaignForm', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(useCreateCampaign).mockReturnValue({
-            mutateAsync: mockCreateCampaign,
+            createCampaign: mockCreateCampaign,
             isPending: false,
         } as any);
     });

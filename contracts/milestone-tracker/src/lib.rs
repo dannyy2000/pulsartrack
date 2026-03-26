@@ -46,6 +46,9 @@ const INSTANCE_BUMP_AMOUNT: u32 = 86_400;
 const PERSISTENT_LIFETIME_THRESHOLD: u32 = 120_960;
 const PERSISTENT_BUMP_AMOUNT: u32 = 1_051_200;
 
+/// Minimum duration for a milestone deadline: 1 hour.
+const MIN_DURATION_SECS: u64 = 3_600;
+
 #[contract]
 pub struct MilestoneTrackerContract;
 
@@ -76,12 +79,19 @@ impl MilestoneTrackerContract {
         target_metric: String,
         target_value: u64,
         reward_amount: i128,
-        deadline: u64,
+        duration_secs: u64,
     ) -> u64 {
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         advertiser.require_auth();
+
+        if duration_secs < MIN_DURATION_SECS {
+            panic!("duration too short: minimum is 3600 seconds");
+        }
+
+        let now = env.ledger().timestamp();
+        let deadline = now + duration_secs;
 
         let counter: u64 = env
             .storage()
@@ -101,7 +111,7 @@ impl MilestoneTrackerContract {
             status: MilestoneStatus::Pending,
             deadline,
             achieved_at: None,
-            created_at: env.ledger().timestamp(),
+            created_at: now,
         };
 
         let _ttl_key = DataKey::Milestone(milestone_id);

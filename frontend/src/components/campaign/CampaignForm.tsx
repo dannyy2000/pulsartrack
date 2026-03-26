@@ -25,12 +25,14 @@ export function CampaignForm({ onSuccess, onCancel }: CampaignFormProps) {
     resolver: zodResolver(campaignSchema),
     mode: "onTouched",
     defaultValues: {
+      title: "",
+      contentId: "",
       campaignType: 1,
       budgetXlm: "",
-      costPerViewXlm: "",
+      costPerViewXlm: "0.001",
       durationDays: 30,
-      targetViews: "",
-      dailyViewLimit: "",
+      targetViews: "10000",
+      dailyViewLimit: "1000",
       refundable: true,
     },
   });
@@ -49,6 +51,8 @@ export function CampaignForm({ onSuccess, onCancel }: CampaignFormProps) {
 
     try {
       const result = await createCampaign({
+        title: data.title,
+        contentId: data.contentId,
         campaignType: data.campaignType as number,
         budgetXlm: parseFloat(data.budgetXlm),
         costPerViewXlm: parseFloat(data.costPerViewXlm),
@@ -57,7 +61,7 @@ export function CampaignForm({ onSuccess, onCancel }: CampaignFormProps) {
         dailyViewLimit: parseInt(data.dailyViewLimit),
         refundable: data.refundable ?? true,
       });
-      onSuccess?.((result as any)?.result || 0);
+      onSuccess?.(result as unknown as number);
       reset();
     } catch (err: any) {
       setSubmitError(err?.message || "Failed to create campaign");
@@ -66,6 +70,44 @@ export function CampaignForm({ onSuccess, onCancel }: CampaignFormProps) {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <div>
+        <label
+          htmlFor="campaign-title"
+          className="block text-sm font-medium text-gray-300 mb-1"
+        >
+          Campaign Title <span className="text-red-400">*</span>
+        </label>
+        <input
+          id="campaign-title"
+          type="text"
+          {...register("title")}
+          placeholder="My Campaign"
+          className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 text-sm"
+        />
+        {errors.title && (
+          <p className="text-red-400 text-xs mt-1">{errors.title.message}</p>
+        )}
+      </div>
+
+      <div>
+        <label
+          htmlFor="campaign-content-id"
+          className="block text-sm font-medium text-gray-300 mb-1"
+        >
+          Content ID <span className="text-red-400">*</span>
+        </label>
+        <input
+          id="campaign-content-id"
+          type="text"
+          {...register("contentId")}
+          placeholder="ipfs://..."
+          className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 text-sm"
+        />
+        {errors.contentId && (
+          <p className="text-red-400 text-xs mt-1">{errors.contentId.message}</p>
+        )}
+      </div>
+
       <div>
         <label
           htmlFor="campaign-type"
@@ -241,7 +283,7 @@ export function CampaignForm({ onSuccess, onCancel }: CampaignFormProps) {
       <div className="flex gap-3 pt-2">
         <button
           type="submit"
-          disabled={!isValid || isPending}
+          disabled={isPending}
           className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm"
         >
           {isPending ? "Creating..." : "Create Campaign"}

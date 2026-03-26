@@ -1,6 +1,6 @@
 #![cfg(test)]
 use super::*;
-use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env, String};
+use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, Env, String};
 
 fn setup(env: &Env) -> (MilestoneTrackerContractClient<'_>, Address, Address) {
     let admin = Address::generate(env);
@@ -36,7 +36,7 @@ fn test_create_milestone() {
     env.mock_all_auths();
     let (c, _, _) = setup(&env);
     let advertiser = Address::generate(&env);
-    let deadline = env.ledger().timestamp() + 86_400; // 1 day from now
+    let duration_secs = 86_400u64; // 1 day
     let id = c.create_milestone(
         &advertiser,
         &1u64,
@@ -44,13 +44,13 @@ fn test_create_milestone() {
         &s(&env, "views"),
         &1000u64,
         &50_000i128,
-        &deadline,
+        &duration_secs,
     );
     assert_eq!(id, 1);
     let m = c.get_milestone(&id).unwrap();
     assert!(matches!(m.status, MilestoneStatus::Pending));
     assert_eq!(m.target_value, 1000);
-    assert_eq!(m.deadline, deadline);
+    assert_eq!(m.deadline, env.ledger().timestamp() + duration_secs);
     assert_eq!(c.get_campaign_milestone_count(&1u64), 1);
 }
 
@@ -60,7 +60,6 @@ fn test_update_progress() {
     env.mock_all_auths();
     let (c, _, oracle) = setup(&env);
     let advertiser = Address::generate(&env);
-    let deadline = env.ledger().timestamp() + 86_400; // 1 day from now
     let id = c.create_milestone(
         &advertiser,
         &1u64,
@@ -68,7 +67,7 @@ fn test_update_progress() {
         &s(&env, "views"),
         &1000u64,
         &50_000i128,
-        &deadline,
+        &86_400u64, // 1 day
     );
     c.update_progress(&oracle, &id, &500u64);
     let m = c.get_milestone(&id).unwrap();
@@ -82,7 +81,6 @@ fn test_update_progress_achieves() {
     env.mock_all_auths();
     let (c, _, oracle) = setup(&env);
     let advertiser = Address::generate(&env);
-    let deadline = env.ledger().timestamp() + 86_400; // 1 day from now
     let id = c.create_milestone(
         &advertiser,
         &1u64,
@@ -90,7 +88,7 @@ fn test_update_progress_achieves() {
         &s(&env, "views"),
         &1000u64,
         &50_000i128,
-        &deadline,
+        &86_400u64, // 1 day
     );
     c.update_progress(&oracle, &id, &1000u64);
     let m = c.get_milestone(&id).unwrap();
@@ -104,7 +102,6 @@ fn test_dispute_milestone() {
     env.mock_all_auths();
     let (c, _, oracle) = setup(&env);
     let advertiser = Address::generate(&env);
-    let deadline = env.ledger().timestamp() + 86_400; // 1 day from now
     let id = c.create_milestone(
         &advertiser,
         &1u64,
@@ -112,7 +109,7 @@ fn test_dispute_milestone() {
         &s(&env, "views"),
         &1000u64,
         &50_000i128,
-        &deadline,
+        &86_400u64, // 1 day
     );
     c.update_progress(&oracle, &id, &1000u64);
     c.dispute_milestone(&advertiser, &id);
@@ -126,7 +123,6 @@ fn test_resolve_dispute() {
     env.mock_all_auths();
     let (c, admin, oracle) = setup(&env);
     let advertiser = Address::generate(&env);
-    let deadline = env.ledger().timestamp() + 86_400; // 1 day from now
     let id = c.create_milestone(
         &advertiser,
         &1u64,
@@ -134,7 +130,7 @@ fn test_resolve_dispute() {
         &s(&env, "views"),
         &1000u64,
         &50_000i128,
-        &deadline,
+        &86_400u64, // 1 day
     );
     c.update_progress(&oracle, &id, &1000u64);
     c.dispute_milestone(&advertiser, &id);
@@ -157,9 +153,8 @@ fn test_milestone_missed_after_deadline() {
     env.mock_all_auths();
     let (c, _, oracle) = setup(&env);
     let advertiser = Address::generate(&env);
-    
-    // Set deadline to current timestamp (already expired)
-    let deadline = env.ledger().timestamp();
+
+    // Create with minimum valid duration (1 hour)
     let id = c.create_milestone(
         &advertiser,
         &1u64,
@@ -167,39 +162,36 @@ fn test_milestone_missed_after_deadline() {
         &s(&env, "views"),
         &1000u64,
         &50_000i128,
-        &deadline,
+        &MIN_DURATION_SECS,
     );
-    
-    // Advance time by 1 second
+
+    // Advance time past deadline
     env.ledger().with_mut(|li| {
-        li.timestamp = li.timestamp + 1;
+        li.timestamp += MIN_DURATION_SECS + 1;
     });
-    
+
     // Update progress but don't reach target
     c.update_progress(&oracle, &id, &500u64);
     let m = c.get_milestone(&id).unwrap();
-    
-    // Should be marked as Missed because deadline passed
+
     assert!(matches!(m.status, MilestoneStatus::Missed));
     assert_eq!(m.current_value, 500);
 }
 
 #[test]
-fn test_time_domain_consistency() {
+fn test_deadline_is_computed_from_now_plus_duration() {
     let env = Env::default();
     env.mock_all_auths();
-    
-    // Set a non-zero timestamp
+
     env.ledger().with_mut(|li| {
         li.timestamp = 1_000_000;
     });
-    
+
     let (c, _, oracle) = setup(&env);
     let advertiser = Address::generate(&env);
-    
-    let current_time = env.ledger().timestamp();
-    let deadline = current_time + 86_400; // 1 day from now
-    
+    let duration_secs = 86_400u64; // 1 day
+    let now = env.ledger().timestamp();
+
     let id = c.create_milestone(
         &advertiser,
         &1u64,
@@ -207,23 +199,54 @@ fn test_time_domain_consistency() {
         &s(&env, "views"),
         &1000u64,
         &50_000i128,
-        &deadline,
+        &duration_secs,
     );
-    
-    // Achieve the milestone
+
+    let m = c.get_milestone(&id).unwrap();
+
+    // deadline must equal now + duration_secs, not a raw ledger sequence
+    assert_eq!(m.deadline, now + duration_secs);
+    assert_eq!(m.created_at, now);
+
+    // Achieve the milestone and verify all time fields are in the same domain
     c.update_progress(&oracle, &id, &1000u64);
     let m = c.get_milestone(&id).unwrap();
-    
-    // All time fields should be in the same domain (Unix timestamps)
-    assert!(m.created_at > 0);
-    assert_eq!(m.deadline, deadline);
-    assert!(m.achieved_at.is_some());
-    
-    let achieved_time = m.achieved_at.unwrap();
-    
-    // achieved_at should be >= created_at
-    assert!(achieved_time >= m.created_at);
-    
-    // achieved_at should be <= deadline (achieved before deadline)
-    assert!(achieved_time <= m.deadline);
+    assert!(m.achieved_at.unwrap() >= m.created_at);
+    assert!(m.achieved_at.unwrap() <= m.deadline);
+}
+
+#[test]
+#[should_panic(expected = "duration too short")]
+fn test_create_milestone_rejects_zero_duration() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, _, _) = setup(&env);
+    let advertiser = Address::generate(&env);
+    c.create_milestone(
+        &advertiser,
+        &1u64,
+        &s(&env, "1000 views"),
+        &s(&env, "views"),
+        &1000u64,
+        &50_000i128,
+        &0u64, // zero duration — must panic
+    );
+}
+
+#[test]
+#[should_panic(expected = "duration too short")]
+fn test_create_milestone_rejects_sub_minimum_duration() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, _, _) = setup(&env);
+    let advertiser = Address::generate(&env);
+    c.create_milestone(
+        &advertiser,
+        &1u64,
+        &s(&env, "1000 views"),
+        &s(&env, "views"),
+        &1000u64,
+        &50_000i128,
+        &(MIN_DURATION_SECS - 1), // one second below minimum
+    );
 }

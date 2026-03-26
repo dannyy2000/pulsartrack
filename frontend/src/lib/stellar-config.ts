@@ -76,8 +76,11 @@ function validateContractIds() {
   }
 }
 
-// Run validation
-validateContractIds();
+// Run validation client-side only — contract calls never happen during SSG/SSR,
+// and throwing at module evaluation time breaks `next build`.
+if (typeof window !== 'undefined') {
+  validateContractIds();
+}
 
 export type ContractName = keyof typeof CONTRACT_IDS;
 

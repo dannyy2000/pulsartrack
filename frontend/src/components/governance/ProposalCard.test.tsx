@@ -33,7 +33,7 @@ describe('ProposalCard', () => {
         const forButton = screen.getByText('For');
         fireEvent.click(forButton);
 
-        expect(mockOnVote).toHaveBeenCalledWith(1n, 'for');
+        expect(mockOnVote).toHaveBeenCalledWith(1, 'for');
     });
 
     it('should show user vote if already voted', () => {

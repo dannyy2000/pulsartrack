@@ -5,8 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Auction } from '@/types/contracts';
 import { usePlaceBid } from '@/hooks/useContract';
-import { formatXlm } from '@/lib/display-utils';
-import { xlmToStroops } from '@/lib/stellar-config';
+import { stroopsToXlm, xlmToStroops } from '@/lib/stellar-config';
 import { createBidSchema, BidFormData } from '@/lib/validation/schemas';
 
 interface BidFormProps {
@@ -20,9 +19,9 @@ export function BidForm({ auction, campaignId, onSuccess, onCancel }: BidFormPro
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { placeBid, isPending } = usePlaceBid();
 
-  const floorXlm = Number(formatXlm(BigInt(auction.floor_price)));
+  const floorXlm = stroopsToXlm(auction.floor_price);
   const currentBidXlm = auction.winning_bid
-    ? Number(formatXlm(BigInt(auction.winning_bid)))
+    ? stroopsToXlm(auction.winning_bid)
     : null;
   const minBid = currentBidXlm ? currentBidXlm * 1.05 : floorXlm;
 
@@ -128,7 +127,7 @@ export function BidForm({ auction, campaignId, onSuccess, onCancel }: BidFormPro
         <div className="flex gap-3">
           <button
             type="submit"
-            disabled={!isValid || isPending}
+            disabled={isPending}
             className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm"
           >
             {isPending ? 'Submitting...' : 'Submit Bid'}

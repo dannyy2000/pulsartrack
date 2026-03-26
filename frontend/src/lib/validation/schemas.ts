@@ -4,6 +4,8 @@ const VALID_DURATIONS = [7, 14, 30, 60, 90] as const;
 
 export const campaignSchema = z
   .object({
+    title: z.string().min(1, "Title is required"),
+    contentId: z.string().min(1, "Content ID is required"),
     campaignType: z.coerce
       .number()
       .int("Campaign type must be a whole number")
@@ -85,7 +87,7 @@ export function createBidSchema(minBid: number) {
         message: "Bid amount must be a positive number",
       })
       .refine((v) => !isNaN(parseFloat(v)) && parseFloat(v) >= minBid, {
-        message: `Bid must be at least ${minBid.toFixed(4)} XLM`,
+        message: `Minimum bid is ${minBid.toFixed(4)} XLM`,
       }),
   });
 }

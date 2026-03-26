@@ -198,6 +198,8 @@ export function useCreateCampaign() {
   const { address } = useWalletStore();
 
   const createCampaign = async (params: {
+    title?: string;
+    contentId?: string;
     campaignType: number;
     budgetXlm: number;
     costPerViewXlm: number;

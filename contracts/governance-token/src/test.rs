@@ -1,6 +1,9 @@
 #![cfg(test)]
 use super::*;
-use soroban_sdk::{testutils::Address as _, Address, Env};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger, LedgerInfo},
+    Address, Env,
+};
 
 fn setup(env: &Env) -> (GovernanceTokenContractClient<'_>, Address) {
     let admin = Address::generate(env);
@@ -137,6 +140,48 @@ fn test_approve_and_allowance() {
     c.mint(&admin, &owner, &1_000i128);
     c.approve(&owner, &spender, &500i128, &1000u32);
     assert_eq!(c.allowance(&owner, &spender), 500);
+}
+
+#[test]
+fn test_transfer_from() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, admin) = setup(&env);
+    let owner = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let to = Address::generate(&env);
+    c.mint(&admin, &owner, &1_000i128);
+    // expiry well above default ledger sequence (0)
+    c.approve(&owner, &spender, &500i128, &1000u32);
+    c.transfer_from(&spender, &owner, &to, &200i128);
+    assert_eq!(c.balance(&owner), 800);
+    assert_eq!(c.balance(&to), 200);
+    assert_eq!(c.allowance(&owner, &spender), 300);
+}
+
+#[test]
+#[should_panic(expected = "allowance expired")]
+fn test_transfer_from_expired_allowance() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (c, admin) = setup(&env);
+    let owner = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let to = Address::generate(&env);
+    c.mint(&admin, &owner, &1_000i128);
+    // approve with expiry = 5, then advance ledger past it
+    c.approve(&owner, &spender, &500i128, &5u32);
+    env.ledger().set(LedgerInfo {
+        protocol_version: 22,
+        sequence_number: 6,
+        timestamp: env.ledger().timestamp(),
+        network_id: Default::default(),
+        base_reserve: 10,
+        min_temp_entry_ttl: 10,
+        min_persistent_entry_ttl: 10,
+        max_entry_ttl: 3_110_400,
+    });
+    c.transfer_from(&spender, &owner, &to, &100i128);
 }
 
 #[test]
